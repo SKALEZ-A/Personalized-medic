@@ -1,0 +1,1107 @@
+# Comprehensive Platform Configuration for AI Personalized Medicine Platform
+# This file contains all configuration settings for the healthcare platform
+
+# Environment Configuration
+environment:
+  name: "production"
+  debug: false
+  testing: false
+  maintenance_mode: false
+  version: "2.0.0"
+  build_number: "2024.01.15.001"
+  deployment_timestamp: "2024-01-15T10:00:00Z"
+
+# Application Settings
+application:
+  name: "AI Personalized Medicine Platform"
+  description: "Comprehensive healthcare platform combining AI, genomic analysis, and personalized medicine"
+  host: "0.0.0.0"
+  port: 8000
+  workers: 4
+  timeout: 30
+  max_request_size: "100MB"
+  cors_origins:
+    - "https://app.healthcare-platform.com"
+    - "https://api.healthcare-platform.com"
+    - "https://docs.healthcare-platform.com"
+  cors_methods:
+    - "GET"
+    - "POST"
+    - "PUT"
+    - "DELETE"
+    - "OPTIONS"
+    - "PATCH"
+  cors_headers:
+    - "Authorization"
+    - "Content-Type"
+    - "X-Requested-With"
+    - "Accept"
+    - "Origin"
+    - "User-Agent"
+  trusted_hosts:
+    - "healthcare-platform.com"
+    - "*.healthcare-platform.com"
+
+# Database Configuration
+database:
+  primary:
+    engine: "postgresql"
+    host: "healthcare-postgresql"
+    port: 5432
+    database: "healthcare_db"
+    username: "healthcare_user"
+    password: "${DATABASE_PASSWORD}"
+    ssl_mode: "require"
+    connection_timeout: 30
+    pool_size: 20
+    max_overflow: 30
+    pool_recycle: 3600
+    echo: false
+
+  readonly:
+    engine: "postgresql"
+    host: "healthcare-postgresql-readonly"
+    port: 5432
+    database: "healthcare_db"
+    username: "healthcare_readonly"
+    password: "${DATABASE_READONLY_PASSWORD}"
+    ssl_mode: "require"
+    connection_timeout: 30
+    pool_size: 10
+    max_overflow: 20
+
+  audit:
+    engine: "postgresql"
+    host: "healthcare-audit-db"
+    port: 5432
+    database: "healthcare_audit"
+    username: "audit_user"
+    password: "${AUDIT_DATABASE_PASSWORD}"
+    ssl_mode: "require"
+    retention_days: 2555  # 7 years HIPAA requirement
+
+# Redis Configuration
+redis:
+  primary:
+    host: "healthcare-redis-master"
+    port: 6379
+    password: "${REDIS_PASSWORD}"
+    db: 0
+    ssl: true
+    socket_timeout: 5
+    socket_connect_timeout: 5
+    socket_keepalive: true
+    socket_keepalive_options:
+      TCP_KEEPIDLE: 60
+      TCP_KEEPINTVL: 30
+      TCP_KEEPCNT: 3
+    max_connections: 20
+    retry_on_timeout: true
+
+  cache:
+    host: "healthcare-redis-cache"
+    port: 6379
+    password: "${REDIS_CACHE_PASSWORD}"
+    db: 1
+    ssl: true
+    default_ttl: 3600
+    max_memory: "1gb"
+    max_memory_policy: "allkeys-lru"
+
+  session:
+    host: "healthcare-redis-session"
+    port: 6379
+    password: "${REDIS_SESSION_PASSWORD}"
+    db: 2
+    ssl: true
+    ttl: 86400  # 24 hours
+
+# MongoDB Configuration
+mongodb:
+  primary:
+    host: "healthcare-mongodb"
+    port: 27017
+    database: "healthcare"
+    username: "healthcare_user"
+    password: "${MONGODB_PASSWORD}"
+    auth_source: "admin"
+    ssl: true
+    ssl_cert_reqs: "CERT_REQUIRED"
+    replica_set: "rs0"
+    read_preference: "secondaryPreferred"
+    max_pool_size: 50
+    min_pool_size: 10
+    max_idle_time_ms: 30000
+    wait_queue_timeout_ms: 10000
+
+  genomic:
+    database: "genomic_data"
+    collection_prefix: "analysis_"
+    chunk_size_mb: 16
+    compression: "zlib"
+    encryption: true
+
+  imaging:
+    database: "imaging_data"
+    gridfs_bucket: "images"
+    chunk_size_mb: 8
+    deduplication: true
+
+# Elasticsearch Configuration
+elasticsearch:
+  hosts:
+    - host: "healthcare-elasticsearch"
+      port: 9200
+      use_ssl: true
+      verify_certs: true
+      ssl_show_warn: false
+  auth:
+    username: "elastic"
+    password: "${ELASTICSEARCH_PASSWORD}"
+  index_settings:
+    number_of_shards: 3
+    number_of_replicas: 1
+    refresh_interval: "30s"
+  indices:
+    patients:
+      name: "patients"
+      mappings:
+        properties:
+          patient_id: { type: "keyword", index: true }
+          first_name: { type: "text", analyzer: "standard" }
+          last_name: { type: "text", analyzer: "standard" }
+          date_of_birth: { type: "date", format: "yyyy-MM-dd" }
+          medical_conditions: { type: "keyword" }
+          medications: { type: "keyword" }
+    genomic_analyses:
+      name: "genomic_analyses"
+      mappings:
+        properties:
+          patient_id: { type: "keyword", index: true }
+          analysis_type: { type: "keyword" }
+          genes: { type: "keyword" }
+          variants: { type: "nested" }
+          clinical_significance: { type: "keyword" }
+    clinical_notes:
+      name: "clinical_notes"
+      mappings:
+        properties:
+          patient_id: { type: "keyword", index: true }
+          provider_id: { type: "keyword" }
+          encounter_date: { type: "date" }
+          content: { type: "text", analyzer: "medical_analyzer" }
+          keywords: { type: "keyword" }
+
+# Authentication & Authorization
+authentication:
+  jwt:
+    secret_key: "${JWT_SECRET_KEY}"
+    algorithm: "RS256"
+    access_token_expire_minutes: 30
+    refresh_token_expire_days: 7
+    issuer: "healthcare-platform"
+    audience: "healthcare-api"
+
+  oauth:
+    google:
+      client_id: "${GOOGLE_CLIENT_ID}"
+      client_secret: "${GOOGLE_CLIENT_SECRET}"
+      redirect_uri: "https://app.healthcare-platform.com/auth/google/callback"
+    apple:
+      client_id: "${APPLE_CLIENT_ID}"
+      client_secret: "${APPLE_CLIENT_SECRET}"
+      redirect_uri: "https://app.healthcare-platform.com/auth/apple/callback"
+
+  mfa:
+    enabled: true
+    methods:
+      - "totp"
+      - "sms"
+      - "email"
+    totp_issuer: "Healthcare Platform"
+    backup_codes_count: 10
+    sms_provider: "twilio"
+    email_template: "mfa_code"
+
+  password_policy:
+    min_length: 12
+    require_uppercase: true
+    require_lowercase: true
+    require_digits: true
+    require_special_chars: true
+    prevent_common_passwords: true
+    max_consecutive_chars: 3
+    history_check: 5
+
+  session:
+    max_concurrent_sessions: 5
+    idle_timeout_minutes: 30
+    absolute_timeout_hours: 8
+    extend_on_activity: true
+
+authorization:
+  rbac:
+    enabled: true
+    default_role: "patient"
+    roles:
+      patient:
+        permissions:
+          - "read_own_data"
+          - "update_own_profile"
+          - "schedule_appointments"
+          - "view_own_results"
+      physician:
+        permissions:
+          - "read_patient_data"
+          - "write_prescriptions"
+          - "order_tests"
+          - "access_genomic_data"
+          - "clinical_decision_support"
+        inherits_from: ["patient"]
+      nurse:
+        permissions:
+          - "read_patient_data"
+          - "update_vital_signs"
+          - "administer_medications"
+        inherits_from: ["patient"]
+      pharmacist:
+        permissions:
+          - "read_prescriptions"
+          - "dispense_medications"
+          - "drug_interaction_check"
+        inherits_from: ["patient"]
+      researcher:
+        permissions:
+          - "read_anonymized_data"
+          - "export_research_data"
+          - "statistical_analysis"
+      admin:
+        permissions: ["*"]
+
+  abac:
+    enabled: true
+    policies:
+      - name: "patient_data_access"
+        condition: "user.role in ['physician', 'nurse'] or user.id == resource.patient_id"
+      - name: "emergency_access"
+        condition: "context.emergency == true"
+      - name: "research_data_access"
+        condition: "user.role == 'researcher' and context.irb_approved == true"
+
+# Security Configuration
+security:
+  encryption:
+    algorithm: "AES-256-GCM"
+    key_rotation_days: 90
+    kms_provider: "aws"
+    envelope_encryption: true
+
+  audit:
+    enabled: true
+    log_level: "detailed"
+    retention_days: 2555
+    sensitive_fields_masking: true
+    real_time_alerts: true
+
+  rate_limiting:
+    enabled: true
+    default_limits:
+      requests_per_minute: 60
+      requests_per_hour: 1000
+      burst_limit: 100
+    endpoints:
+      "/auth/login":
+        requests_per_minute: 5
+        burst_limit: 3
+      "/api/v1/genomics/analyze":
+        requests_per_hour: 10
+      "/api/v1/health-monitoring/data":
+        requests_per_minute: 120
+
+  intrusion_detection:
+    enabled: true
+    rules:
+      - name: "sql_injection"
+        pattern: "(\\b(union|select|insert|update|delete|drop|create|alter)\\b)"
+        action: "block"
+      - name: "xss_attempt"
+        pattern: "(<script|javascript:|on\\w+\\s*=)"
+        action: "block"
+      - name: "path_traversal"
+        pattern: "(\\.\\./|/etc/|/var/)"
+        action: "block"
+
+  compliance:
+    hipaa:
+      enabled: true
+      audit_trail: true
+      data_encryption: true
+      access_controls: true
+      breach_notification: true
+    gdpr:
+      enabled: true
+      data_minimization: true
+      consent_management: true
+      right_to_erasure: true
+      data_portability: true
+
+# Genomic Analysis Configuration
+genomic_analysis:
+  engines:
+    - name: "comprehensive_analysis"
+      description: "Full genome analysis with clinical interpretation"
+      enabled: true
+      priority: "high"
+      timeout_hours: 4
+      max_concurrent: 5
+
+    - name: "pharmacogenomics"
+      description: "Drug metabolism and response analysis"
+      enabled: true
+      priority: "medium"
+      timeout_hours: 2
+      max_concurrent: 10
+
+    - name: "disease_risk"
+      description: "Disease predisposition analysis"
+      enabled: true
+      priority: "medium"
+      timeout_hours: 1
+      max_concurrent: 20
+
+  pipelines:
+    quality_control:
+      enabled: true
+      min_coverage: 30
+      min_quality_score: 20
+      adapter_trimming: true
+      contamination_check: true
+
+    alignment:
+      tool: "bwa-mem2"
+      reference_genome: "GRCh38"
+      max_memory_gb: 32
+      threads: 16
+
+    variant_calling:
+      tool: "gatk"
+      mode: " haplotype_caller"
+      confidence_threshold: 30
+      quality_filter: true
+
+    annotation:
+      tools: ["vep", "annovar", "snpEff"]
+      databases: ["clinvar", "gnomad", "dbnsfp"]
+      clinical_focus: true
+
+  storage:
+    raw_data_retention_days: 90
+    processed_data_retention_years: 7
+    compressed_storage: true
+    encryption: true
+
+# AI/ML Configuration
+ai_ml:
+  models:
+    disease_prediction:
+      model_type: "ensemble"
+      algorithms: ["xgboost", "random_forest", "neural_network"]
+      features: ["genetics", "biomarkers", "lifestyle", "medical_history"]
+      update_frequency: "weekly"
+      validation_metric: "auc_roc"
+      min_performance_threshold: 0.85
+
+    drug_response:
+      model_type: "deep_learning"
+      architecture: "transformer"
+      input_features: ["genomic_variants", "drug_structure", "patient_profile"]
+      training_data_size: 100000
+      validation_split: 0.2
+      early_stopping_patience: 10
+
+    medical_imaging:
+      models:
+        chest_xray:
+          architecture: "densenet121"
+          classes: ["normal", "pneumonia", "covid19", "tuberculosis"]
+          input_size: [224, 224, 3]
+        mammogram:
+          architecture: "efficientnet_b4"
+          classes: ["normal", "benign", "malignant"]
+          input_size: [380, 380, 3]
+        retinal_scan:
+          architecture: "unet"
+          task: "segmentation"
+          classes: ["normal", "diabetic_retinopathy", "macular_degeneration"]
+
+  training:
+    gpu_enabled: true
+    distributed_training: true
+    batch_size: 32
+    learning_rate: 0.001
+    epochs: 100
+    early_stopping: true
+    model_checkpointing: true
+    experiment_tracking: true
+
+  inference:
+    batch_processing: true
+    caching_enabled: true
+    timeout_seconds: 300
+    max_concurrent_requests: 50
+    load_balancing: true
+
+# Health Monitoring Configuration
+health_monitoring:
+  vital_signs:
+    heart_rate:
+      normal_range: [60, 100]
+      warning_thresholds: [50, 110]
+      critical_thresholds: [40, 120]
+      units: "bpm"
+    blood_pressure:
+      normal_range: [[90, 120], [60, 80]]
+      warning_thresholds: [[85, 130], [55, 85]]
+      critical_thresholds: [[80, 140], [50, 90]]
+      units: "mmHg"
+    temperature:
+      normal_range: [36.1, 37.2]
+      warning_thresholds: [35.5, 38.0]
+      critical_thresholds: [34.0, 39.0]
+      units: "celsius"
+    oxygen_saturation:
+      normal_range: [95, 100]
+      warning_thresholds: [90, 94]
+      critical_thresholds: [85, 89]
+      units: "percent"
+
+  devices:
+    supported_types:
+      - "smartwatch"
+      - "blood_pressure_monitor"
+      - "glucose_meter"
+      - "scale"
+      - "thermometer"
+      - "oximeter"
+      - "ecg_monitor"
+    data_validation:
+      enabled: true
+      outlier_detection: true
+      device_authentication: true
+      data_integrity_check: true
+
+  alerts:
+    severity_levels:
+      - "info"
+      - "warning"
+      - "critical"
+      - "emergency"
+    notification_channels:
+      - "email"
+      - "sms"
+      - "push_notification"
+      - "webhook"
+    escalation_policy:
+      critical: "immediate_notification"
+      emergency: "emergency_services_alert"
+
+  data_processing:
+    real_time_processing: true
+    batch_processing_interval: 300  # 5 minutes
+    anomaly_detection: true
+    trend_analysis: true
+    predictive_alerts: true
+
+# Treatment Planning Configuration
+treatment_planning:
+  algorithms:
+    evidence_based_medicine:
+      enabled: true
+      guidelines_sources: ["ADA", "ACC/AHA", "NICE", "ESC"]
+      evidence_levels: ["A", "B", "C", "D"]
+      update_frequency: "monthly"
+
+    personalized_medicine:
+      enabled: true
+      genomic_integration: true
+      biomarker_integration: true
+      lifestyle_factors: true
+      patient_preferences: true
+
+    reinforcement_learning:
+      enabled: true
+      reward_function: "health_outcome_improvement"
+      exploration_rate: 0.1
+      learning_rate: 0.01
+      discount_factor: 0.95
+
+  templates:
+    diabetes_management:
+      monitoring_parameters: ["HbA1c", "glucose", "weight", "blood_pressure"]
+      follow_up_frequency: "quarterly"
+      lifestyle_interventions: ["diet", "exercise", "smoking_cessation"]
+      medication_classes: ["metformin", "sulfonylureas", "glp1_agonists"]
+
+    cardiovascular_disease:
+      monitoring_parameters: ["lipids", "blood_pressure", "ecg", "stress_test"]
+      follow_up_frequency: "biannual"
+      lifestyle_interventions: ["diet", "exercise", "stress_management"]
+      medication_classes: ["statins", "ace_inhibitors", "beta_blockers"]
+
+  decision_support:
+    clinical_rules_engine: true
+    drug_interaction_checking: true
+    contraindication_alerts: true
+    cost_effectiveness_analysis: true
+    patient_education_materials: true
+
+# Clinical Decision Support Configuration
+clinical_decision_support:
+  knowledge_base:
+    update_frequency: "daily"
+    sources:
+      - "UpToDate"
+      - "PubMed"
+      - "Cochrane Reviews"
+      - "Clinical Practice Guidelines"
+    quality_filtering: true
+    evidence_grading: true
+
+  diagnostic_support:
+    differential_diagnosis_engine: true
+    symptom_checker: true
+    risk_calculators: true
+    clinical_prediction_rules: true
+
+  treatment_recommendations:
+    drug_dosing_calculators: true
+    interaction_checkers: true
+    allergy_alerts: true
+    renal_adjustment: true
+    hepatic_adjustment: true
+
+  monitoring_guidelines:
+    lab_monitoring_schedules: true
+    vital_sign_monitoring: true
+    adverse_event_monitoring: true
+    therapeutic_drug_monitoring: true
+
+# Virtual Assistant Configuration
+virtual_assistant:
+  nlp_engine:
+    provider: "openai"
+    model: "gpt-4"
+    temperature: 0.3
+    max_tokens: 500
+    system_prompt: |
+      You are a healthcare virtual assistant for the AI Personalized Medicine Platform.
+      Provide accurate, helpful information about health conditions, medications, and medical advice.
+      Always recommend consulting healthcare providers for medical decisions.
+      Be empathetic, professional, and prioritize patient safety.
+
+  conversation_management:
+    session_timeout_minutes: 30
+    max_conversation_length: 50
+    context_window_size: 10
+    conversation_persistence: true
+
+  capabilities:
+    symptom_assessment: true
+    medication_information: true
+    appointment_scheduling: true
+    health_education: true
+    triage_assessment: true
+    emergency_detection: true
+
+  integrations:
+    appointment_system: true
+    electronic_health_record: true
+    pharmacy_system: true
+    telemedicine_platform: true
+
+# Research Tools Configuration
+research_tools:
+  clinical_trials:
+    registry_integration: true
+    eligibility_matching: true
+    patient_recruitment: true
+    data_collection: true
+    compliance_monitoring: true
+
+  data_analysis:
+    statistical_tools: ["R", "Python", "SAS"]
+    visualization_libraries: ["matplotlib", "seaborn", "plotly"]
+    machine_learning_frameworks: ["scikit-learn", "tensorflow", "pytorch"]
+    big_data_processing: ["spark", "dask", "ray"]
+
+  collaboration:
+    secure_data_sharing: true
+    version_control: true
+    peer_review_system: true
+    publication_support: true
+
+# Blockchain Configuration
+blockchain:
+  enabled: true
+  network: "ethereum"
+  contract_address: "${BLOCKCHAIN_CONTRACT_ADDRESS}"
+  rpc_url: "${BLOCKCHAIN_RPC_URL}"
+  private_key: "${BLOCKCHAIN_PRIVATE_KEY}"
+
+  features:
+    data_integrity: true
+    consent_management: true
+    audit_trail: true
+    smart_contracts: true
+    zero_knowledge_proofs: true
+
+  record_types:
+    - "health_data_consent"
+    - "genomic_analysis_result"
+    - "treatment_plan"
+    - "medication_prescription"
+    - "clinical_trial_participation"
+
+# Third-party Integrations
+integrations:
+  electronic_health_records:
+    epic:
+      enabled: true
+      api_url: "${EPIC_API_URL}"
+      client_id: "${EPIC_CLIENT_ID}"
+      private_key: "${EPIC_PRIVATE_KEY}"
+    cerner:
+      enabled: true
+      api_url: "${CERNER_API_URL}"
+      client_id: "${CERNER_CLIENT_ID}"
+      client_secret: "${CERNER_CLIENT_SECRET}"
+
+  laboratory_systems:
+    quest_diagnostics:
+      enabled: true
+      api_url: "${QUEST_API_URL}"
+      username: "${QUEST_USERNAME}"
+      password: "${QUEST_PASSWORD}"
+    labcorp:
+      enabled: true
+      api_url: "${LABCORP_API_URL}"
+      client_id: "${LABCORP_CLIENT_ID}"
+      client_secret: "${LABCORP_CLIENT_SECRET}"
+
+  pharmacy_systems:
+    sure_scripts:
+      enabled: true
+      api_url: "${SURESCRIPTS_API_URL}"
+      client_id: "${SURESCRIPTS_CLIENT_ID}"
+      client_secret: "${SURESCRIPTS_CLIENT_SECRET}"
+
+  insurance_providers:
+    medicare:
+      enabled: true
+      api_url: "${MEDICARE_API_URL}"
+      client_id: "${MEDICARE_CLIENT_ID}"
+      client_secret: "${MEDICARE_CLIENT_SECRET}"
+    medicaid:
+      enabled: true
+      api_url: "${MEDICAID_API_URL}"
+      client_id: "${MEDICAID_CLIENT_ID}"
+      client_secret: "${MEDICAID_CLIENT_SECRET}"
+
+# Monitoring and Alerting
+monitoring:
+  metrics_collection:
+    enabled: true
+    collection_interval_seconds: 30
+    retention_days: 90
+
+  alerting:
+    enabled: true
+    channels:
+      - "email"
+      - "sms"
+      - "slack"
+      - "pagerduty"
+    rules:
+      - name: "api_error_rate"
+        condition: "rate(http_requests_total{status=~'5..'} [5m]) > 0.05"
+        severity: "critical"
+        description: "API error rate above 5%"
+      - name: "database_connection_pool_exhausted"
+        condition: "db_connections_active / db_connections_total > 0.9"
+        severity: "warning"
+        description: "Database connection pool nearly exhausted"
+      - name: "genomic_analysis_queue_backlog"
+        condition: "genomic_analysis_queue_length > 50"
+        severity: "warning"
+        description: "Genomic analysis queue has significant backlog"
+
+  logging:
+    level: "INFO"
+    format: "json"
+    structured_logging: true
+    log_aggregation: true
+    retention_days: 30
+
+# Backup and Recovery
+backup:
+  database:
+    enabled: true
+    schedule: "0 2 * * *"  # Daily at 2 AM
+    retention_days: 30
+    compression: true
+    encryption: true
+    storage_location: "s3://healthcare-backups/database/"
+
+  file_storage:
+    enabled: true
+    schedule: "0 3 * * *"  # Daily at 3 AM
+    retention_days: 90
+    compression: true
+    encryption: true
+    storage_location: "s3://healthcare-backups/files/"
+
+  configuration:
+    enabled: true
+    schedule: "0 4 * * 1"  # Weekly on Monday at 4 AM
+    retention_weeks: 52
+    storage_location: "s3://healthcare-backups/config/"
+
+  disaster_recovery:
+    enabled: true
+    rto_hours: 4  # Recovery Time Objective
+    rpo_minutes: 15  # Recovery Point Objective
+    multi_region: true
+    failover_automation: true
+
+# Performance Optimization
+performance:
+  caching:
+    enabled: true
+    layers:
+      - "application_cache"
+      - "database_query_cache"
+      - "cdn_cache"
+      - "browser_cache"
+    default_ttl_seconds: 3600
+    max_memory_mb: 1024
+
+  database_optimization:
+    query_caching: true
+    connection_pooling: true
+    read_replicas: true
+    query_optimization: true
+    indexing_strategy: "comprehensive"
+
+  cdn:
+    enabled: true
+    provider: "cloudflare"
+    cache_static_assets: true
+    cache_api_responses: false
+    purge_on_deploy: true
+
+  compression:
+    enabled: true
+    algorithms: ["gzip", "brotli"]
+    min_size_bytes: 1024
+    compression_level: 6
+
+# Feature Flags
+feature_flags:
+  genomic_analysis_advanced: true
+  ai_drug_discovery: true
+  blockchain_security: true
+  telemedicine_integration: true
+  clinical_trials_matching: true
+  real_time_health_monitoring: true
+  virtual_assistant: true
+  clinical_decision_support: true
+  personalized_treatment_plans: true
+  research_collaboration_tools: true
+
+# API Rate Limiting
+api_rate_limiting:
+  global_limits:
+    requests_per_minute: 1000
+    requests_per_hour: 10000
+    burst_limit: 200
+
+  endpoint_limits:
+    "/api/v1/auth/login":
+      requests_per_minute: 5
+      burst_limit: 3
+    "/api/v1/genomics/analyze":
+      requests_per_hour: 10
+    "/api/v1/health-monitoring/data":
+      requests_per_minute: 120
+    "/api/v1/ai/predict/*":
+      requests_per_minute: 50
+
+# Notification Templates
+notification_templates:
+  appointment_reminder:
+    email_subject: "Upcoming Appointment Reminder - {{ patient_name }}"
+    email_body: |
+      Dear {{ patient_name }},
+
+      This is a reminder of your upcoming appointment:
+
+      Date: {{ appointment_date }}
+      Time: {{ appointment_time }}
+      Provider: {{ provider_name }}
+      Type: {{ appointment_type }}
+      Location: {{ location }}
+
+      Please arrive 15 minutes early for check-in.
+
+      If you need to reschedule, please call {{ clinic_phone }} or use our patient portal.
+
+      Best regards,
+      Healthcare Platform Team
+
+  medication_reminder:
+    sms_body: "Hi {{ patient_name }}, time to take your {{ medication_name }} ({{ dosage }}). Reply 'taken' to confirm."
+
+  abnormal_result_alert:
+    email_subject: "Important Health Information - {{ patient_name }}"
+    email_body: |
+      Dear {{ patient_name }},
+
+      We have received an important lab result that requires your attention:
+
+      Test: {{ test_name }}
+      Result: {{ result_value }} {{ units }}
+      Reference Range: {{ reference_range }}
+      Interpretation: {{ interpretation }}
+
+      Please contact your healthcare provider at {{ provider_phone }} to discuss these results.
+
+      For urgent concerns, please seek immediate medical attention.
+
+      Best regards,
+      Healthcare Platform Team
+
+# Compliance Settings
+compliance:
+  hipaa:
+    enabled: true
+    audit_trail_retention_years: 7
+    data_encryption: true
+    access_logging: true
+    breach_notification_enabled: true
+    breach_notification_contacts:
+      - "privacy@healthcare-platform.com"
+      - "+1-800-555-0123"
+
+  gdpr:
+    enabled: true
+    data_processing_agreement_required: true
+    consent_management: true
+    data_portability: true
+    right_to_erasure: true
+    privacy_impact_assessment_required: true
+
+  soc2:
+    enabled: true
+    audit_frequency: "annual"
+    security_controls_review: "quarterly"
+
+# Emergency Response
+emergency_response:
+  enabled: true
+  emergency_contacts:
+    - name: "Emergency Services"
+      phone: "911"
+      type: "emergency_services"
+    - name: "Poison Control"
+      phone: "1-800-222-1222"
+      type: "poison_control"
+    - name: "Healthcare Platform Emergency Line"
+      phone: "+1-800-555-0199"
+      type: "internal_support"
+
+  protocols:
+    cardiac_arrest: "immediate_cpr_and_defibrillation"
+    stroke: "fast_track_neurology_evaluation"
+    sepsis: "immediate_antibiotic_administration"
+    trauma: "advanced_trauma_life_support"
+
+# Quality Assurance
+quality_assurance:
+  automated_testing:
+    enabled: true
+    test_coverage_minimum: 80
+    mutation_testing: true
+    fuzz_testing: true
+
+  manual_testing:
+    enabled: true
+    user_acceptance_testing: true
+    accessibility_testing: true
+    cross_browser_testing: true
+
+  performance_testing:
+    enabled: true
+    load_testing: true
+    stress_testing: true
+    spike_testing: true
+
+  security_testing:
+    enabled: true
+    penetration_testing: "monthly"
+    vulnerability_scanning: "weekly"
+    code_review: "per_commit"
+
+# Scaling Configuration
+scaling:
+  horizontal_pod_autoscaling:
+    enabled: true
+    min_replicas: 3
+    max_replicas: 20
+    target_cpu_utilization_percentage: 70
+    target_memory_utilization_percentage: 80
+
+  cluster_autoscaling:
+    enabled: true
+    min_nodes: 5
+    max_nodes: 50
+    scale_up_threshold: 80
+    scale_down_threshold: 20
+
+  database_scaling:
+    read_replicas: true
+    connection_pooling: true
+    query_optimization: true
+    caching_layers: true
+
+# Cost Optimization
+cost_optimization:
+  resource_rightsizing:
+    enabled: true
+    cpu_optimization: true
+    memory_optimization: true
+    storage_optimization: true
+
+  auto_shutdown:
+    enabled: true
+    non_production_shutdown_time: "18:00"
+    weekend_shutdown: true
+
+  spot_instances:
+    enabled: true
+    maximum_spot_percentage: 70
+    fallback_to_ondemand: true
+
+  reserved_instances:
+    enabled: true
+    reservation_coverage_target: 80
+
+# Business Intelligence
+business_intelligence:
+  analytics:
+    enabled: true
+    real_time_dashboards: true
+    custom_reports: true
+    data_export: true
+
+  key_metrics:
+    - "patient_satisfaction_score"
+    - "average_response_time"
+    - "diagnostic_accuracy"
+    - "treatment_outcome_rates"
+    - "cost_per_patient"
+    - "system_uptime"
+
+  reporting:
+    automated_reports: true
+    scheduled_reports: ["daily", "weekly", "monthly", "quarterly"]
+    stakeholder_distribution: true
+
+# Support Configuration
+support:
+  ticketing_system:
+    enabled: true
+    provider: "zendesk"
+    auto_assignment: true
+    sla_management: true
+
+  knowledge_base:
+    enabled: true
+    self_service_portal: true
+    ai_powered_search: true
+    content_categorization: true
+
+  communication_channels:
+    - "email"
+    - "phone"
+    - "chat"
+    - "web_portal"
+    - "mobile_app"
+
+  escalation_matrix:
+    level_1_response_time: "4 hours"
+    level_2_response_time: "2 hours"
+    level_3_response_time: "30 minutes"
+    critical_response_time: "15 minutes"
+
+# Training and Documentation
+training:
+  user_training:
+    enabled: true
+    mandatory_training: true
+    certification_tracking: true
+    competency_assessment: true
+
+  staff_training:
+    enabled: true
+    role_based_training: true
+    compliance_training: "annual"
+    technical_training: "quarterly"
+
+  documentation:
+    user_manual: true
+    api_documentation: true
+    training_videos: true
+    quick_reference_guides: true
+
+# Legal and Regulatory
+legal:
+  terms_of_service:
+    version: "2.0"
+    last_updated: "2024-01-01"
+    acceptance_required: true
+
+  privacy_policy:
+    version: "2.0"
+    last_updated: "2024-01-01"
+    gdpr_compliant: true
+    hipaa_compliant: true
+
+  data_processing_agreement:
+    required: true
+    template_version: "1.0"
+    legal_review_required: true
+
+# Final configuration validation
+validation:
+  required_environment_variables:
+    - "DATABASE_PASSWORD"
+    - "REDIS_PASSWORD"
+    - "JWT_SECRET_KEY"
+    - "AWS_ACCESS_KEY_ID"
+    - "AWS_SECRET_ACCESS_KEY"
+    - "OPENAI_API_KEY"
+    - "BLOCKCHAIN_PRIVATE_KEY"
+
+  configuration_checks:
+    - "database_connectivity"
+    - "redis_connectivity"
+    - "elasticsearch_connectivity"
+    - "external_api_connectivity"
+    - "encryption_key_validation"
+    - "certificate_validation"
+
+  startup_validation:
+    enabled: true
+    fail_on_error: true
+    retry_attempts: 3
+    retry_delay_seconds: 5

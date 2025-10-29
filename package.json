@@ -1,0 +1,23 @@
+{
+  "name": "ai-personalized-medicine-platform",
+  "version": "1.0.0",
+  "description": "Comprehensive AI-powered personalized medicine platform",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "build": "webpack --mode production",
+    "test": "jest"
+  },
+  "keywords": [
+    "personalized-medicine",
+    "ai-healthcare",
+    "genomics",
+    "drug-discovery",
+    "health-monitoring"
+  ],
+  "author": "AI Medicine Platform Team",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {}
+}

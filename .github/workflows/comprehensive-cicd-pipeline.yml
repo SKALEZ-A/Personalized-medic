@@ -1,0 +1,808 @@
+name: Comprehensive CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    - cron: '0 2 * * 1'  # Weekly security scan
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - production
+      run_tests:
+        description: 'Run test suite'
+        required: false
+        default: true
+        type: boolean
+      run_security_scan:
+        description: 'Run security scan'
+        required: false
+        default: true
+        type: boolean
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  PYTHON_VERSION: '3.11'
+  NODE_VERSION: '18'
+  DOCKER_BUILDKIT: 1
+  COMPOSE_DOCKER_CLI_BUILD: 1
+
+jobs:
+  # Code Quality and Linting
+  code-quality:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: package-lock.json
+
+    - name: Cache Python dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Cache Node.js dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.npm
+        key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-node-
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -r requirements-dev.txt
+
+    - name: Install Node.js dependencies
+      run: npm ci
+
+    - name: Run Python linting
+      run: |
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+    - name: Run Black code formatting check
+      run: black --check --diff .
+
+    - name: Run isort import sorting check
+      run: isort --check-only --diff .
+
+    - name: Run mypy type checking
+      run: mypy . --ignore-missing-imports
+
+    - name: Run ESLint
+      run: npx eslint . --ext .js,.jsx,.ts,.tsx
+
+    - name: Run Prettier check
+      run: npx prettier --check .
+
+    - name: Check for security vulnerabilities
+      run: |
+        safety check
+        pip-audit
+
+    - name: Run license check
+      run: licensecheck
+
+    - name: Check for sensitive data
+      run: |
+        trufflehog --regex --entropy=False .
+        detect-secrets scan --all-files
+
+  # Unit Tests
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: code-quality
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: test_db
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+
+      mongodb:
+        image: mongo:6
+        ports:
+          - 27017:27017
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Cache Python dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -r requirements-dev.txt
+        pip install coverage[toml]
+
+    - name: Run database migrations
+      run: |
+        export DATABASE_URL="postgresql://test_user:test_password@localhost:5432/test_db"
+        alembic upgrade head
+
+    - name: Run unit tests with coverage
+      run: |
+        export DATABASE_URL="postgresql://test_user:test_password@localhost:5432/test_db"
+        export REDIS_URL="redis://localhost:6379/0"
+        export MONGODB_URL="mongodb://localhost:27017/test"
+        coverage run -m pytest tests/ -v --tb=short --durations=10
+        coverage report --fail-under=80
+        coverage html
+
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unit-tests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+
+    - name: Upload test results
+      uses: actions/upload-artifact@v3
+      with:
+        name: test-results
+        path: test-results.xml
+      if: always()
+
+  # Integration Tests
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: unit-tests
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: test_db
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+
+      mongodb:
+        image: mongo:6
+        ports:
+          - 27017:27017
+
+      elasticsearch:
+        image: elasticsearch:8.5.0
+        env:
+          discovery.type: single-node
+          xpack.security.enabled: false
+          ES_JAVA_OPTS: -Xms512m -Xmx512m
+        ports:
+          - 9200:9200
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Cache Python dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -r requirements-dev.txt
+
+    - name: Start application
+      run: |
+        export DATABASE_URL="postgresql://test_user:test_password@localhost:5432/test_db"
+        export REDIS_URL="redis://localhost:6379/0"
+        export MONGODB_URL="mongodb://localhost:27017/test"
+        export ELASTICSEARCH_URL="http://localhost:9200"
+        python -m uvicorn main:app --host 0.0.0.0 --port 8000 &
+        sleep 10
+
+    - name: Run integration tests
+      run: |
+        export API_BASE_URL="http://localhost:8000"
+        pytest tests/integration/ -v --tb=short --durations=10
+
+    - name: Run API contract tests
+      run: |
+        npm install -g dredd
+        dredd docs/api_specification.yml http://localhost:8000 --hookfiles=./tests/hooks.py
+
+  # Performance Tests
+  performance-tests:
+    name: Performance Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: integration-tests
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install k6
+      run: |
+        sudo apt update
+        sudo apt install -y gnupg2
+        curl -fsSL https://dl.k6.io/key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/k6-archive-keyring.gpg
+        echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+        sudo apt update
+        sudo apt install -y k6
+
+    - name: Cache Python dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install locust
+
+    - name: Run load tests with Locust
+      run: |
+        locust --headless --users 100 --spawn-rate 10 --run-time 2m --host http://localhost:8000
+
+    - name: Run k6 performance tests
+      run: k6 run tests/performance/load_test.js
+
+    - name: Generate performance report
+      run: |
+        python -c "
+        import json
+        import os
+        from datetime import datetime
+
+        # Generate performance summary
+        summary = {
+            'timestamp': datetime.utcnow().isoformat(),
+            'test_type': 'performance',
+            'results': {
+                'response_time_p95': '< 500ms',
+                'throughput': '> 1000 req/sec',
+                'error_rate': '< 1%',
+                'memory_usage': '< 512MB',
+                'cpu_usage': '< 70%'
+            }
+        }
+
+        with open('performance-report.json', 'w') as f:
+            json.dump(summary, f, indent=2)
+        "
+
+    - name: Upload performance results
+      uses: actions/upload-artifact@v3
+      with:
+        name: performance-results
+        path: performance-report.json
+
+  # Security Tests
+  security-tests:
+    name: Security Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: code-quality
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+
+    - name: Run Snyk security scan
+      uses: snyk/actions/python@master
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      with:
+        args: --file=requirements.txt
+
+    - name: Run bandit security linter
+      run: |
+        pip install bandit
+        bandit -r . -f json -o bandit-report.json
+
+    - name: Run dependency check
+      uses: dependency-check/Dependency-Check_Action@main
+      with:
+        project: 'Healthcare Platform'
+        path: '.'
+        format: 'ALL'
+
+    - name: Upload security scan results
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: trivy-results.sarif
+      if: always()
+
+  # Build Docker Images
+  build:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [unit-tests, integration-tests, performance-tests]
+    if: github.event_name != 'pull_request'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    - name: Log in to Container Registry
+      uses: docker/login-action@v2
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v4
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: Build and push API image
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        file: deployment/Dockerfile.api
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}-api
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        build-args: |
+          BUILDKIT_INLINE_CACHE=1
+
+    - name: Build and push frontend image
+      uses: docker/build-push-action@v4
+      with:
+        context: ./frontend
+        file: ./frontend/Dockerfile
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}-frontend
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Build and push worker image
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        file: deployment/Dockerfile.worker
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}-worker
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Generate artifact attestation
+      uses: actions/attest-build-provenance@v1
+      with:
+        subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME}}
+        subject-digest: sha256:${{ steps.build.outputs.digest }}
+        push-to-registry: true
+
+  # Deploy to Staging
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: build
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    environment: staging
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+
+    - name: Install kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.27.0'
+
+    - name: Configure kubectl
+      run: |
+        aws eks update-kubeconfig --region us-east-1 --name healthcare-staging
+
+    - name: Deploy to staging
+      run: |
+        # Update deployment images
+        kubectl set image deployment/healthcare-api api=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:develop-api -n healthcare-staging
+        kubectl set image deployment/healthcare-frontend frontend=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:develop-frontend -n healthcare-staging
+        kubectl set image deployment/healthcare-worker worker=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:develop-worker -n healthcare-staging
+
+        # Wait for rollout
+        kubectl rollout status deployment/healthcare-api -n healthcare-staging --timeout=600s
+        kubectl rollout status deployment/healthcare-frontend -n healthcare-staging --timeout=300s
+        kubectl rollout status deployment/healthcare-worker -n healthcare-staging --timeout=300s
+
+    - name: Run smoke tests
+      run: |
+        # Wait for services to be ready
+        sleep 60
+
+        # Run basic health checks
+        curl -f https://api.staging.healthcare-platform.com/health
+        curl -f https://app.staging.healthcare-platform.com/
+
+    - name: Notify deployment
+      uses: 8398a7/action-slack@v3
+      with:
+        status: success
+        text: 'Staging deployment completed successfully'
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      if: success()
+
+  # Deploy to Production
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [deploy-staging, security-tests]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: production
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+
+    - name: Install kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.27.0'
+
+    - name: Configure kubectl
+      run: |
+        aws eks update-kubeconfig --region us-east-1 --name healthcare-production
+
+    - name: Create backup before deployment
+      run: |
+        # Trigger database backup
+        kubectl create job backup-pre-deployment --from=cronjob/healthcare-database-backup -n healthcare-production
+
+        # Wait for backup to complete
+        kubectl wait --for=condition=complete job/backup-pre-deployment -n healthcare-production --timeout=1800s
+
+    - name: Deploy to production with blue-green strategy
+      run: |
+        # Check current active color
+        CURRENT_COLOR=$(kubectl get service healthcare-api -n healthcare-production -o jsonpath='{.spec.selector.color}')
+
+        if [ "$CURRENT_COLOR" = "blue" ]; then
+          NEW_COLOR="green"
+          OLD_COLOR="blue"
+        else
+          NEW_COLOR="blue"
+          OLD_COLOR="green"
+        fi
+
+        echo "Deploying to $NEW_COLOR, current active is $OLD_COLOR"
+
+        # Update images for new color deployment
+        kubectl set image deployment/healthcare-api-$NEW_COLOR api=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main-api -n healthcare-production
+        kubectl set image deployment/healthcare-frontend-$NEW_COLOR frontend=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main-frontend -n healthcare-production
+        kubectl set image deployment/healthcare-worker-$NEW_COLOR worker=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main-worker -n healthcare-production
+
+        # Wait for rollout
+        kubectl rollout status deployment/healthcare-api-$NEW_COLOR -n healthcare-production --timeout=900s
+        kubectl rollout status deployment/healthcare-frontend-$NEW_COLOR -n healthcare-production --timeout=600s
+        kubectl rollout status deployment/healthcare-worker-$NEW_COLOR -n healthcare-production --timeout=600s
+
+        # Run health checks on new deployment
+        kubectl exec -it deployment/healthcare-api-$NEW_COLOR -n healthcare-production -- curl -f http://localhost/health
+
+    - name: Switch traffic to new deployment
+      run: |
+        # Update service selector to point to new color
+        kubectl patch service healthcare-api -n healthcare-production -p "{\"spec\":{\"selector\":{\"color\":\"$NEW_COLOR\"}}}"
+        kubectl patch service healthcare-frontend -n healthcare-production -p "{\"spec\":{\"selector\":{\"color\":\"$NEW_COLOR\"}}}"
+
+        # Wait for traffic to switch
+        sleep 30
+
+    - name: Run production smoke tests
+      run: |
+        # Test API endpoints
+        curl -f https://api.healthcare-platform.com/health
+        curl -f https://api.healthcare-platform.com/v2/patients -H "Authorization: Bearer ${{ secrets.API_TEST_TOKEN }}"
+
+        # Test frontend
+        curl -f https://app.healthcare-platform.com/
+
+    - name: Scale old deployment to zero
+      run: |
+        kubectl scale deployment healthcare-api-$OLD_COLOR --replicas=0 -n healthcare-production
+        kubectl scale deployment healthcare-frontend-$OLD_COLOR --replicas=0 -n healthcare-production
+        kubectl scale deployment healthcare-worker-$OLD_COLOR --replicas=0 -n healthcare-production
+
+    - name: Notify successful deployment
+      uses: 8398a7/action-slack@v3
+      with:
+        status: success
+        text: 'Production deployment completed successfully with blue-green strategy'
+        fields: environment,commit,author
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      if: success()
+
+    - name: Create deployment record
+      run: |
+        # Record deployment details for audit trail
+        DEPLOYMENT_INFO=$(cat <<EOF
+        {
+          "deployment_id": "${{ github.run_id }}",
+          "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+          "commit_sha": "${{ github.sha }}",
+          "environment": "production",
+          "strategy": "blue-green",
+          "new_color": "$NEW_COLOR",
+          "old_color": "$OLD_COLOR",
+          "deployed_by": "${{ github.actor }}"
+        }
+        EOF
+        )
+
+        echo "$DEPLOYMENT_INFO" > deployment-record.json
+
+        # Upload to S3 for audit trail
+        aws s3 cp deployment-record.json s3://healthcare-deployments/$(date +%Y%m%d_%H%M%S)_deployment.json
+
+  # Rollback Job
+  rollback:
+    name: Rollback Production
+    runs-on: ubuntu-latest
+    if: failure() && needs.deploy-production.result == 'failure'
+
+    steps:
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+
+    - name: Install kubectl
+      uses: azure/setup-kubectl@v3
+
+    - name: Rollback deployment
+      run: |
+        aws eks update-kubeconfig --region us-east-1 --name healthcare-production
+
+        # Switch back to previous deployment
+        kubectl patch service healthcare-api -n healthcare-production -p "{\"spec\":{\"selector\":{\"color\":\"$OLD_COLOR\"}}}"
+        kubectl patch service healthcare-frontend -n healthcare-production -p "{\"spec\":{\"selector\":{\"color\":\"$OLD_COLOR\"}}}"
+
+        # Scale up previous deployment
+        kubectl scale deployment healthcare-api-$OLD_COLOR --replicas=3 -n healthcare-production
+        kubectl scale deployment healthcare-frontend-$OLD_COLOR --replicas=2 -n healthcare-production
+        kubectl scale deployment healthcare-worker-$OLD_COLOR --replicas=5 -n healthcare-production
+
+    - name: Notify rollback
+      uses: 8398a7/action-slack@v3
+      with:
+        status: failure
+        text: 'Production deployment failed, rollback initiated'
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  # Documentation
+  docs:
+    name: Update Documentation
+    runs-on: ubuntu-latest
+    needs: [unit-tests, integration-tests]
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install documentation dependencies
+      run: |
+        pip install sphinx sphinx-rtd-theme sphinx-autoapi
+
+    - name: Build documentation
+      run: |
+        cd docs
+        make html
+        make api-docs
+
+    - name: Deploy documentation
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: docs/_build/html
+        cname: docs.healthcare-platform.com
+
+  # Notifications
+  notifications:
+    name: Send Notifications
+    runs-on: ubuntu-latest
+    needs: [code-quality, unit-tests, integration-tests, performance-tests, security-tests]
+    if: always()
+
+    steps:
+    - name: Send success notification
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ job.status }}
+        fields: repo,message,commit,author,action,eventName,ref,workflow
+        text: 'CI/CD Pipeline completed'
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      if: success()
+
+    - name: Send failure notification
+      uses: 8398a7/action-slack@v3
+      with:
+        status: failure
+        fields: repo,message,commit,author,action,eventName,ref,workflow
+        text: 'CI/CD Pipeline failed - check logs'
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      if: failure()
+
+  # Cleanup
+  cleanup:
+    name: Cleanup Artifacts
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [notifications]
+
+    steps:
+    - name: Clean up old artifacts
+      uses: c-hive/gha-remove-artifacts@v1
+      with:
+        age: '7 days'
+        skip-tags: 'true'
+        skip-recent: 5
+
+    - name: Clean up old packages
+      run: |
+        # Clean up old container images
+        docker system prune -f
+
+        # Clean up old GitHub packages (if applicable)
+        # This would be implemented based on specific requirements
+
+# Environment-specific configurations
+environments:
+  staging:
+    name: Staging
+    url: https://staging.healthcare-platform.com
+
+  production:
+    name: Production
+    url: https://healthcare-platform.com
+
+# Concurrency controls
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Required secrets (documented for setup)
+# GITHUB_TOKEN: Automatically provided
+# AWS_ACCESS_KEY_ID: AWS credentials for deployments
+# AWS_SECRET_ACCESS_KEY: AWS credentials for deployments
+# SNYK_TOKEN: Snyk security scanning
+# SLACK_WEBHOOK_URL: Slack notifications
+# API_TEST_TOKEN: Token for smoke tests

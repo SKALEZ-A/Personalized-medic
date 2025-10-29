@@ -1,0 +1,129 @@
+{
+  "name": "AI Personalized Medicine Platform",
+  "short_name": "MediCare AI",
+  "description": "Comprehensive AI-powered healthcare platform for personalized medicine",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#3b82f6",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "lang": "en-US",
+  "categories": ["health", "medical", "productivity"],
+  "icons": [
+    {
+      "src": "/icons/icon-72x72.png",
+      "sizes": "72x72",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-96x96.png",
+      "sizes": "96x96",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-128x128.png",
+      "sizes": "128x128",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-144x144.png",
+      "sizes": "144x144",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-152x152.png",
+      "sizes": "152x152",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-384x384.png",
+      "sizes": "384x384",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Health Overview",
+      "short_name": "Overview",
+      "description": "View your health overview and metrics",
+      "url": "/?tab=overview",
+      "icons": [
+        {
+          "src": "/icons/shortcut-overview.png",
+          "sizes": "96x96"
+        }
+      ]
+    },
+    {
+      "name": "Appointments",
+      "short_name": "Appointments",
+      "description": "Manage your medical appointments",
+      "url": "/?tab=appointments",
+      "icons": [
+        {
+          "src": "/icons/shortcut-appointments.png",
+          "sizes": "96x96"
+        }
+      ]
+    },
+    {
+      "name": "Medications",
+      "short_name": "Meds",
+      "description": "Track your medications and reminders",
+      "url": "/?tab=medications",
+      "icons": [
+        {
+          "src": "/icons/shortcut-medications.png",
+          "sizes": "96x96"
+        }
+      ]
+    }
+  ],
+  "related_applications": [],
+  "prefer_related_applications": false,
+  "screenshots": [
+    {
+      "src": "/screenshots/dashboard-mobile.png",
+      "sizes": "390x844",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Mobile dashboard view"
+    },
+    {
+      "src": "/screenshots/dashboard-desktop.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Desktop dashboard view"
+    }
+  ],
+  "features": [
+    "Cross Platform",
+    "Fast",
+    "Offline Support",
+    "Installable",
+    "Accessible"
+  ],
+  "edge_side_panel": {
+    "preferred_width": 400
+  }
+}
